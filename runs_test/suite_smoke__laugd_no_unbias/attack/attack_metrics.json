@@ -1,0 +1,11 @@
+{
+  "obs": "/data/litengmo/ml-test-1/Federated_learning_final/runs_test/suite_smoke__laugd_no_unbias/attack_obs.pt",
+  "round": 0,
+  "client_id": 0,
+  "defense": "laugd",
+  "label_true": 0,
+  "label_recon": 0,
+  "mse": 0.2760167121887207,
+  "psnr": 5.590646215883714,
+  "loss_final": 0.007654290646314621
+}

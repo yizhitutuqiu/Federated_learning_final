@@ -1,0 +1,2 @@
+{"round": 0, "train_loss": 2.2717831134796143, "train_acc": 0.0, "test_loss": 2.346284055709839, "test_acc": 0.12880859375}
+{"round": 1, "train_loss": 2.539770007133484, "train_acc": 0.0, "test_loss": NaN, "test_acc": NaN}

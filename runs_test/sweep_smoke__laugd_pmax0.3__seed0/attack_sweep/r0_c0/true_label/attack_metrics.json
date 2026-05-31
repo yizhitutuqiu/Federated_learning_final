@@ -1,0 +1,11 @@
+{
+  "obs": "/data/litengmo/ml-test-1/Federated_learning_final/runs_test/sweep_smoke__laugd_pmax0.3__seed0/attack_obs_r0_c0.pt",
+  "round": 0,
+  "client_id": 0,
+  "defense": "laugd",
+  "label_true": 0,
+  "label_recon": 0,
+  "mse": 0.2809140086174011,
+  "psnr": 5.514266028648555,
+  "loss_final": 0.020800752565264702
+}

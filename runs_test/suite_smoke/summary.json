@@ -1,0 +1,65 @@
+[
+  {
+    "name": "baseline",
+    "run_dir": "runs_test/suite_smoke__baseline",
+    "test_acc": 0.13779296875,
+    "psnr": 5.66584528285763,
+    "mse": 0.2712785601615906,
+    "label_true": 0,
+    "label_recon": 0
+  },
+  {
+    "name": "clipping",
+    "run_dir": "runs_test/suite_smoke__clipping",
+    "test_acc": 0.0900390625,
+    "psnr": 5.561143712396209,
+    "mse": 0.2778981328010559,
+    "label_true": 0,
+    "label_recon": 0
+  },
+  {
+    "name": "dp_light",
+    "run_dir": "runs_test/suite_smoke__dp_light",
+    "test_acc": 0.0998046875,
+    "psnr": 5.55162127797357,
+    "mse": 0.27850812673568726,
+    "label_true": 0,
+    "label_recon": 0
+  },
+  {
+    "name": "laugd",
+    "run_dir": "runs_test/suite_smoke__laugd",
+    "test_acc": 0.09716796875,
+    "psnr": 5.48637425578669,
+    "mse": 0.28272393345832825,
+    "label_true": 0,
+    "label_recon": 0
+  },
+  {
+    "name": "laugd_no_unbias",
+    "run_dir": "runs_test/suite_smoke__laugd_no_unbias",
+    "test_acc": 0.10166015625,
+    "psnr": 5.590646215883714,
+    "mse": 0.2760167121887207,
+    "label_true": 0,
+    "label_recon": 0
+  },
+  {
+    "name": "laugd_fixed_p",
+    "run_dir": "runs_test/suite_smoke__laugd_fixed_p",
+    "test_acc": 0.1060546875,
+    "psnr": 5.507971281396717,
+    "mse": 0.2813214659690857,
+    "label_true": 0,
+    "label_recon": 0
+  },
+  {
+    "name": "laugd_fixed_budget",
+    "run_dir": "runs_test/suite_smoke__laugd_fixed_budget",
+    "test_acc": 0.09716796875,
+    "psnr": 5.490836852678011,
+    "mse": 0.28243356943130493,
+    "label_true": 0,
+    "label_recon": 0
+  }
+]

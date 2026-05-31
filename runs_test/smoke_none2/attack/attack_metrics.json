@@ -1,0 +1,11 @@
+{
+  "obs": "/data/litengmo/ml-test-1/Federated_learning_final/runs_test/smoke_none2/attack_obs.pt",
+  "round": 0,
+  "client_id": 0,
+  "defense": "none",
+  "label_true": 4,
+  "label_recon": 4,
+  "mse": 0.26038140058517456,
+  "psnr": 5.843900412701918,
+  "loss_final": 0.0017009448492899537
+}

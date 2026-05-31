@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.python-version
+.DS_Store
+
+data/
+runs/
+outputs/
+.pytest_cache/
+
+*.ckpt
+*.pth
+*.pt

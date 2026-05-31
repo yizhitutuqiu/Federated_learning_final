@@ -1,0 +1,11 @@
+{
+  "obs": "/data/litengmo/ml-test-1/Federated_learning_final/runs_test/sweep_smoke__clipping_C0.5__seed0/attack_obs_r0_c0.pt",
+  "round": 0,
+  "client_id": 0,
+  "defense": "clipping",
+  "label_true": 0,
+  "label_recon": 0,
+  "mse": 0.27926039695739746,
+  "psnr": 5.539906489834494,
+  "loss_final": 0.06170139089226723
+}

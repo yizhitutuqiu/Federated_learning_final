@@ -26,15 +26,24 @@ def parse_args():
     p.add_argument("--attack-rounds", type=str, default="0,5,10")
     p.add_argument("--attack-clients", type=str, default="0,1,2")
     p.add_argument("--attack-iters", type=int, default=800)
+    p.add_argument("--attack-method", type=str, default="dlg", choices=["dlg", "ig"])
+    p.add_argument("--attack-l2-reg", type=float, default=0.0)
 
     p.add_argument("--clipping-grid", type=str, default="0.2,0.5,1.0,2.0")
     p.add_argument("--dp-grid", type=str, default="0.02,0.05,0.1,0.2,0.3")
     p.add_argument("--laugd-grid", type=str, default="0.1,0.2,0.3,0.5,0.7")
-    p.add_argument("--laugd-alpha", type=float, default=1.0)
-    p.add_argument("--laugd-tau", type=float, default=1.0)
+    p.add_argument("--laugd-alpha-grid", type=str, default="0.5,1.0,2.0")
+    p.add_argument("--laugd-tau-grid", type=str, default="0.9,1.0,1.1")
     p.add_argument("--laugd-normalize-score", action="store_true")
     p.add_argument("--laugd-mask-mode", type=str, default="bernoulli", choices=["bernoulli", "fixed_budget"])
     p.add_argument("--laugd-unbiased", action="store_true")
+    p.add_argument("--include-clip-laugd", action="store_true")
+    p.add_argument("--clip-laugd-clip-grid", type=str, default="0.5,1.0")
+    p.add_argument("--include-laugd-v2", action="store_true")
+    p.add_argument("--laugd-v2-clip-grid", type=str, default="1.0")
+    p.add_argument("--laugd-v2-keep-prob-min", type=float, default=0.25)
+    p.add_argument("--laugd-v2-mag-gamma", type=float, default=1.0)
+    p.add_argument("--laugd-v2-last-layer-mult", type=float, default=2.0)
     return p.parse_args()
 
 
@@ -72,7 +81,16 @@ def run_train(base_cmd: list[str]):
     return Path(out)
 
 
-def run_attack(obs_path: Path, out_dir: Path, device: str, iters: int, seed: int, use_true_label: bool):
+def run_attack(
+    obs_path: Path,
+    out_dir: Path,
+    device: str,
+    iters: int,
+    seed: int,
+    use_true_label: bool,
+    method: str,
+    l2_reg: float,
+):
     cmd = [
         "python",
         str(Path(__file__).resolve().parent / "run_attack.py"),
@@ -86,7 +104,11 @@ def run_attack(obs_path: Path, out_dir: Path, device: str, iters: int, seed: int
         str(iters),
         "--seed",
         str(seed),
+        "--method",
+        str(method),
     ]
+    if float(l2_reg) > 0.0:
+        cmd.extend(["--l2-reg", str(l2_reg)])
     if use_true_label:
         cmd.append("--use-true-label")
     subprocess.check_call(cmd)
@@ -123,6 +145,22 @@ def pareto_front(points: list[dict], x_key: str, y_key: str, maximize_x: bool, m
     return front
 
 
+def mean(xs: list[float]):
+    if not xs:
+        return float("nan")
+    return sum(xs) / len(xs)
+
+
+def safe_float(x):
+    try:
+        v = float(x)
+    except Exception:
+        return float("nan")
+    if v != v:
+        return float("nan")
+    return v
+
+
 def plot_scatter(out_path: Path, rows: list[dict], title: str, x_key: str, y_key: str, groups: list[str]):
     os.environ.setdefault("MPLCONFIGDIR", str(Path("/tmp") / "mplconfig"))
     import matplotlib.pyplot as plt
@@ -132,6 +170,8 @@ def plot_scatter(out_path: Path, rows: list[dict], title: str, x_key: str, y_key
         "clipping": "#ff7f0e",
         "dp_light": "#2ca02c",
         "laugd": "#d62728",
+        "clip_laugd": "#9467bd",
+        "laugd_v2": "#8c564b",
     }
 
     plt.figure(figsize=(7.5, 5.2))
@@ -191,6 +231,10 @@ def main():
     clipping_grid = parse_list(args.clipping_grid, float)
     dp_grid = parse_list(args.dp_grid, float)
     laugd_grid = parse_list(args.laugd_grid, float)
+    laugd_alpha_grid = parse_list(args.laugd_alpha_grid, float)
+    laugd_tau_grid = parse_list(args.laugd_tau_grid, float)
+    clip_laugd_clip_grid = parse_list(args.clip_laugd_clip_grid, float)
+    laugd_v2_clip_grid = parse_list(args.laugd_v2_clip_grid, float)
 
     configs = []
     configs.append({"family": "baseline", "name": "baseline", "defense": "none", "extra": []})
@@ -205,22 +249,78 @@ def main():
                 "extra": ["--clip-norm", "1.0", "--noise-multiplier", str(nm)],
             }
         )
-    for pm in laugd_grid:
-        extra = [
-            "--alpha",
-            str(args.laugd_alpha),
-            "--tau",
-            str(args.laugd_tau),
-            "--p-max",
-            str(pm),
-            "--mask-mode",
-            args.laugd_mask_mode,
-        ]
-        if args.laugd_normalize_score:
-            extra.append("--normalize-score")
-        if args.laugd_unbiased:
-            extra.append("--unbiased")
-        configs.append({"family": "laugd", "name": f"laugd_pmax{pm}", "defense": "laugd", "extra": extra})
+    for alpha in laugd_alpha_grid:
+        for tau in laugd_tau_grid:
+            for pm in laugd_grid:
+                extra = [
+                    "--alpha",
+                    str(alpha),
+                    "--tau",
+                    str(tau),
+                    "--p-max",
+                    str(pm),
+                    "--mask-mode",
+                    args.laugd_mask_mode,
+                ]
+                if args.laugd_normalize_score:
+                    extra.append("--normalize-score")
+                if args.laugd_unbiased:
+                    extra.append("--unbiased")
+                name = f"laugd_a{alpha}_t{tau}_pmax{pm}"
+                configs.append({"family": "laugd", "name": name, "defense": "laugd", "extra": extra})
+
+    if args.include_laugd_v2:
+        for clip_c in laugd_v2_clip_grid:
+            for alpha in laugd_alpha_grid:
+                for tau in laugd_tau_grid:
+                    for pm in laugd_grid:
+                        extra = [
+                            "--clip-norm",
+                            str(clip_c),
+                            "--alpha",
+                            str(alpha),
+                            "--tau",
+                            str(tau),
+                            "--p-max",
+                            str(pm),
+                            "--mask-mode",
+                            args.laugd_mask_mode,
+                            "--normalize-score",
+                            "--unbiased",
+                            "--mag-aware",
+                            "--mag-gamma",
+                            str(args.laugd_v2_mag_gamma),
+                            "--keep-prob-min",
+                            str(args.laugd_v2_keep_prob_min),
+                            "--last-layer-mult",
+                            str(args.laugd_v2_last_layer_mult),
+                        ]
+                        name = f"laugd_v2_C{clip_c}_a{alpha}_t{tau}_pmax{pm}"
+                        configs.append({"family": "laugd_v2", "name": name, "defense": "clip_laugd", "extra": extra})
+
+    if args.include_clip_laugd:
+        for clip_c in clip_laugd_clip_grid:
+            for alpha in laugd_alpha_grid:
+                for tau in laugd_tau_grid:
+                    for pm in laugd_grid:
+                        extra = [
+                            "--clip-norm",
+                            str(clip_c),
+                            "--alpha",
+                            str(alpha),
+                            "--tau",
+                            str(tau),
+                            "--p-max",
+                            str(pm),
+                            "--mask-mode",
+                            args.laugd_mask_mode,
+                        ]
+                        if args.laugd_normalize_score:
+                            extra.append("--normalize-score")
+                        if args.laugd_unbiased:
+                            extra.append("--unbiased")
+                        name = f"clip_laugd_C{clip_c}_a{alpha}_t{tau}_pmax{pm}"
+                        configs.append({"family": "clip_laugd", "name": name, "defense": "clip_laugd", "extra": extra})
 
     all_rows = []
     for seed in seeds:
@@ -281,6 +381,8 @@ def main():
                             iters=args.attack_iters,
                             seed=seed,
                             use_true_label=use_true_label,
+                            method=str(args.attack_method),
+                            l2_reg=float(args.attack_l2_reg),
                         )
                         m = load_attack_metrics(out_attack_dir / "attack_metrics.json")
                         all_rows.append(
@@ -303,8 +405,81 @@ def main():
     with open(out_dir / "rows.json", "w", encoding="utf-8") as f:
         json.dump(all_rows, f, ensure_ascii=False, indent=2)
 
+    def aggregate_rows():
+        groups = {}
+        for r in all_rows:
+            fam = r.get("family")
+            cfg = r.get("config")
+            mode = r.get("attack_mode")
+            if fam is None or cfg is None or mode is None:
+                continue
+            key = (fam, cfg, mode)
+            groups.setdefault(key, []).append(r)
+
+        agg_rows = []
+        for (fam, cfg, mode), lst in groups.items():
+            test_acc = mean([safe_float(x.get("test_acc")) for x in lst])
+            psnr = mean([safe_float(x.get("psnr")) for x in lst])
+            mse = mean([safe_float(x.get("mse")) for x in lst])
+            label_ok = sum(1 for x in lst if int(x.get("label_true", -1)) == int(x.get("label_recon", -2)))
+            agg_rows.append(
+                {
+                    "family": fam,
+                    "config": cfg,
+                    "attack_mode": mode,
+                    "n": len(lst),
+                    "test_acc": test_acc,
+                    "psnr": psnr,
+                    "mse": mse,
+                    "label_acc": label_ok / len(lst) if lst else float("nan"),
+                }
+            )
+        return agg_rows
+
+    agg_rows = aggregate_rows()
+    with open(out_dir / "agg_rows.json", "w", encoding="utf-8") as f:
+        json.dump(agg_rows, f, ensure_ascii=False, indent=2)
+
+    def write_pareto(mode: str):
+        pts = [r for r in agg_rows if r["attack_mode"] == mode]
+        for r in pts:
+            r["_x"] = safe_float(r.get("test_acc"))
+            r["_y"] = safe_float(r.get("psnr"))
+        pts = [r for r in pts if r["_x"] == r["_x"] and r["_y"] == r["_y"]]
+        front = pareto_front(pts, x_key="_x", y_key="_y", maximize_x=True, maximize_y=False)
+        front = sorted(front, key=lambda z: (-z["_x"], z["_y"]))
+
+        fam_counts = {}
+        for r in front:
+            fam_counts[r["family"]] = fam_counts.get(r["family"], 0) + 1
+
+        lines = []
+        lines.append(f"# Pareto 前沿（mode={mode}，目标：test_acc↑ 且 PSNR↓）")
+        lines.append("")
+        lines.append("说明：每个点先在 (family, config, mode) 内做平均聚合，再做全局非支配筛选。")
+        lines.append("")
+        lines.append("## 非支配点数量（按方法）")
+        lines.append("")
+        lines.append("| family | count |")
+        lines.append("|---|---:|")
+        for fam, cnt in sorted(fam_counts.items(), key=lambda x: (-x[1], x[0])):
+            lines.append(f"| {fam} | {cnt} |")
+        lines.append("")
+        lines.append("## 前沿点表格")
+        lines.append("")
+        lines.append("| family | config | n | test_acc | PSNR | MSE | label_acc |")
+        lines.append("|---|---|---:|---:|---:|---:|---:|")
+        for r in front:
+            lines.append(
+                f"| {r['family']} | {r['config']} | {r['n']} | {r['test_acc']:.4f} | {r['psnr']:.2f} | {r['mse']:.6f} | {r['label_acc']:.3f} |"
+            )
+        (out_dir / f"pareto_{mode}.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    write_pareto("unknown_label")
+    write_pareto("true_label")
+
     def summarize_label_acc(mode: str):
-        families = ["baseline", "clipping", "dp_light", "laugd"]
+        families = sorted({r["family"] for r in all_rows})
         stats = {}
         for fam in families:
             rows = [r for r in all_rows if r["family"] == fam and r["attack_mode"] == mode]
@@ -317,6 +492,7 @@ def main():
 
     rows_unknown = [r for r in all_rows if r["attack_mode"] == "unknown_label"]
     rows_true = [r for r in all_rows if r["attack_mode"] == "true_label"]
+    groups_all = sorted({r["family"] for r in all_rows})
 
     if rows_unknown:
         plot_scatter(
@@ -325,7 +501,7 @@ def main():
             title="Privacy-Utility (unknown label attack)",
             x_key="test_acc",
             y_key="psnr",
-            groups=["baseline", "clipping", "dp_light", "laugd"],
+            groups=groups_all,
         )
         plot_scatter(
             out_dir / "privacy_utility_unknown_mse.png",
@@ -333,7 +509,7 @@ def main():
             title="Privacy-Utility (unknown label attack)",
             x_key="test_acc",
             y_key="mse",
-            groups=["baseline", "clipping", "dp_light", "laugd"],
+            groups=groups_all,
         )
         plot_bar(
             out_dir / "label_leak_unknown.png",
@@ -349,7 +525,7 @@ def main():
             title="Privacy-Utility (true label attack)",
             x_key="test_acc",
             y_key="psnr",
-            groups=["baseline", "clipping", "dp_light", "laugd"],
+            groups=groups_all,
         )
         plot_scatter(
             out_dir / "privacy_utility_true_mse.png",
@@ -357,7 +533,7 @@ def main():
             title="Privacy-Utility (true label attack)",
             x_key="test_acc",
             y_key="mse",
-            groups=["baseline", "clipping", "dp_light", "laugd"],
+            groups=groups_all,
         )
 
     lines = []
@@ -365,8 +541,10 @@ def main():
     lines.append("")
     lines.append("- 输出文件：")
     lines.append(f"  - rows.json：全部样本（配置×seed×round×client×attack_mode）")
+    lines.append(f"  - agg_rows.json：按 (family, config, attack_mode) 聚合后的点")
     lines.append(f"  - privacy_utility_*.png：隐私-效用散点与前沿")
     lines.append(f"  - label_leak_unknown.png：标签恢复准确率对比")
+    lines.append(f"  - pareto_*.md：全局 Pareto 前沿表格（严谨判断是否存在非支配点）")
     lines.append("")
     lines.append("建议解读：同等 test_acc 下 PSNR 越低（或 MSE 越高）越隐私；unknown_label 模式下 label recovery 越低越好。")
     with open(out_dir / "summary.md", "w", encoding="utf-8") as f:

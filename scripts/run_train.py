@@ -11,7 +11,7 @@ import sys
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from fl_privacy.data import dirichlet_partitions, get_mnist, make_client_loaders, make_test_loader
-from fl_privacy.defenses import clip_by_global_norm, dp_light, laugd
+from fl_privacy.defenses import clip_by_global_norm, dp_light, laugd, svd_project
 from fl_privacy.fl import aggregate_mean, apply_grads, compute_grads, evaluate
 from fl_privacy.models import SimpleCNN
 from fl_privacy.utils import ensure_dir, get_device, set_seed, write_jsonl
@@ -35,18 +35,26 @@ def parse_args():
     p.add_argument("--num-workers", type=int, default=0)
     p.add_argument("--eval-every", type=int, default=5)
 
-    p.add_argument("--defense", type=str, default="none", choices=["none", "clipping", "dp_light", "laugd"])
+    p.add_argument("--defense", type=str, default="none", choices=["none", "clipping", "dp_light", "svd", "laugd", "clip_laugd"])
 
     p.add_argument("--clip-norm", type=float, default=1.0)
     p.add_argument("--noise-multiplier", type=float, default=0.1)
+    p.add_argument("--svd-rank-ratio", type=float, default=0.25)
 
     p.add_argument("--alpha", type=float, default=1.0)
     p.add_argument("--tau", type=float, default=1.0)
     p.add_argument("--p-max", type=float, default=0.5)
     p.add_argument("--normalize-score", action="store_true")
     p.add_argument("--unbiased", action="store_true")
-    p.add_argument("--mask-mode", type=str, default="bernoulli", choices=["bernoulli", "fixed_budget"])
+    p.add_argument("--mask-mode", type=str, default="bernoulli", choices=["bernoulli", "fixed_budget", "channel"])
     p.add_argument("--fixed-p", type=float, default=-1.0)
+    p.add_argument("--mag-aware", action="store_true")
+    p.add_argument("--mag-gamma", type=float, default=1.0)
+    p.add_argument("--keep-prob-min", type=float, default=0.2)
+    p.add_argument("--last-layer-mult", type=float, default=1.0)
+    p.add_argument("--head-mult", type=float, default=1.0)
+    p.add_argument("--head-layers", type=int, default=2)
+    p.add_argument("--laugd-preclip", action="store_true")
 
     p.add_argument("--capture-attack", action="store_true")
     p.add_argument("--attack-round", type=int, default=0)
@@ -139,8 +147,12 @@ def main():
                 upd, defense_stats = clip_by_global_norm(upd, max_norm=args.clip_norm)
             elif args.defense == "dp_light":
                 upd, defense_stats = dp_light(upd, clip_norm=args.clip_norm, noise_multiplier=args.noise_multiplier)
-            elif args.defense == "laugd":
+            elif args.defense == "svd":
+                upd, defense_stats = svd_project(upd, rank_ratio=float(args.svd_rank_ratio))
+            elif args.defense in ("laugd", "clip_laugd"):
                 fixed_p = None if args.fixed_p < 0 else float(args.fixed_p)
+                if args.defense == "clip_laugd" or bool(args.laugd_preclip):
+                    upd, _ = clip_by_global_norm(upd, max_norm=args.clip_norm)
                 upd, defense_stats = laugd(
                     upd,
                     alpha=args.alpha,
@@ -150,6 +162,12 @@ def main():
                     unbiased=bool(args.unbiased),
                     mask_mode=args.mask_mode,
                     fixed_p=fixed_p,
+                    mag_aware=bool(args.mag_aware),
+                    mag_gamma=float(args.mag_gamma),
+                    keep_prob_min=float(args.keep_prob_min),
+                    last_layer_mult=float(args.last_layer_mult),
+                    head_mult=float(args.head_mult),
+                    head_layers=int(args.head_layers),
                 )
 
             if args.capture_attack and r == args.attack_round and cid == args.attack_client:

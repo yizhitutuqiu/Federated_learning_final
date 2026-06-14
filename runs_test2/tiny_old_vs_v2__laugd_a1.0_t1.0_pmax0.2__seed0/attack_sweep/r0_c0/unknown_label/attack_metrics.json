@@ -1,0 +1,11 @@
+{
+  "obs": "/data/litengmo/ml-test-1/Federated_learning_final/runs_test2/tiny_old_vs_v2__laugd_a1.0_t1.0_pmax0.2__seed0/attack_obs_r0_c0.pt",
+  "round": 0,
+  "client_id": 0,
+  "defense": "laugd",
+  "label_true": 0,
+  "label_recon": 0,
+  "mse": 0.2775549590587616,
+  "psnr": 5.566510087478456,
+  "loss_final": 0.002387490589171648
+}

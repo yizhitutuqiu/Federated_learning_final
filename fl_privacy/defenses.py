@@ -46,6 +46,34 @@ def dp_light(
     return noised, stats
 
 
+def svd_project(
+    update: list[torch.Tensor],
+    rank_ratio: float,
+):
+    if rank_ratio <= 0.0 or rank_ratio > 1.0:
+        raise ValueError("rank_ratio must be in (0, 1]")
+    out: list[torch.Tensor] = []
+    for t in update:
+        if t.numel() == 0:
+            out.append(t.clone())
+            continue
+        if t.dim() < 2:
+            out.append(t.clone())
+            continue
+
+        m = t.shape[0]
+        n = int(t.numel() // m)
+        a = t.detach().reshape(m, n)
+        r = int(max(1, round(rank_ratio * min(m, n))))
+        u, s, v_h = torch.linalg.svd(a, full_matrices=False)
+        u_r = u[:, :r]
+        s_r = s[:r]
+        v_r = v_h[:r, :]
+        approx = (u_r * s_r) @ v_r
+        out.append(approx.reshape_as(t).to(dtype=t.dtype))
+    return out, DefenseStats()
+
+
 def _concentration_score(g: torch.Tensor, eps: float):
     v = g.detach().flatten()
     d = v.numel()
@@ -64,12 +92,18 @@ def laugd(
     unbiased: bool = True,
     mask_mode: str = "bernoulli",
     fixed_p: float | None = None,
+    mag_aware: bool = False,
+    mag_gamma: float = 1.0,
+    keep_prob_min: float = 0.2,
+    last_layer_mult: float = 1.0,
+    head_mult: float = 1.0,
+    head_layers: int = 2,
 ):
     layer_scores: list[float] = []
     layer_ps: list[float] = []
     out: list[torch.Tensor] = []
 
-    for t in update:
+    for layer_idx, t in enumerate(update):
         if t.numel() == 0:
             out.append(t.clone())
             layer_scores.append(0.0)
@@ -87,6 +121,12 @@ def laugd(
         else:
             p = float(max(0.0, min(p_max, fixed_p)))
 
+        if last_layer_mult != 1.0 and layer_idx == (len(update) - 1):
+            p = float(max(0.0, min(p_max, p * float(last_layer_mult))))
+
+        if head_mult != 1.0 and head_layers > 0 and layer_idx >= (len(update) - int(head_layers)):
+            p = float(max(0.0, min(p_max, p * float(head_mult))))
+
         if p <= 0.0:
             out.append(t.clone())
             layer_scores.append(float(score))
@@ -94,8 +134,34 @@ def laugd(
             continue
 
         if mask_mode == "bernoulli":
-            mask = (torch.rand_like(t) > p).to(dtype=t.dtype)
+            if mag_aware:
+                if keep_prob_min <= 0.0 or keep_prob_min >= 1.0:
+                    raise ValueError("keep_prob_min must be in (0, 1)")
+                g_abs = t.detach().abs()
+                mean_abs = g_abs.mean()
+                w = (g_abs / (mean_abs + eps)).pow(float(mag_gamma))
+                w_mean = w.mean()
+                drop_p = p * w / (w_mean + eps)
+                drop_p = torch.clamp(drop_p, 0.0, 1.0 - float(keep_prob_min))
+                keep_prob = 1.0 - drop_p
+                mask = (torch.rand_like(t) < keep_prob).to(dtype=t.dtype)
+            else:
+                keep_prob = 1.0 - p
+                mask = (torch.rand_like(t) > p).to(dtype=t.dtype)
+        elif mask_mode == "channel":
+            if mag_aware:
+                raise ValueError("mag_aware is only supported with mask_mode=bernoulli")
+            keep_prob = 1.0 - p
+            if t.dim() >= 2:
+                c0 = t.shape[0]
+                m = (torch.rand((c0,), device=t.device) < keep_prob).to(dtype=t.dtype)
+                view = (c0,) + (1,) * (t.dim() - 1)
+                mask = m.view(view).expand_as(t)
+            else:
+                mask = (torch.rand_like(t) > p).to(dtype=t.dtype)
         elif mask_mode == "fixed_budget":
+            if mag_aware:
+                raise ValueError("mag_aware is only supported with mask_mode=bernoulli")
             d_all = t.numel()
             k_keep = int(round((1.0 - p) * d_all))
             k_keep = max(0, min(d_all, k_keep))
@@ -107,8 +173,10 @@ def laugd(
             raise ValueError(f"unknown mask_mode={mask_mode}")
 
         if unbiased:
-            keep_prob = 1.0 - p
-            scaled = (mask * t) / keep_prob
+            if isinstance(keep_prob, float):
+                scaled = (mask * t) / keep_prob
+            else:
+                scaled = (mask * t) / keep_prob.to(dtype=t.dtype)
         else:
             scaled = mask * t
 

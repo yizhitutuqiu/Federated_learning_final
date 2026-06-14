@@ -1,0 +1,11 @@
+{
+  "obs": "/data/litengmo/ml-test-1/Federated_learning_final/runs_test/pareto_smoke__laugd_a1.0_t1.0_pmax0.2__seed0/attack_obs_r0_c0.pt",
+  "round": 0,
+  "client_id": 0,
+  "defense": "laugd",
+  "label_true": 0,
+  "label_recon": 0,
+  "mse": 0.2802196443080902,
+  "psnr": 5.525014225279121,
+  "loss_final": 0.008122002705931664
+}

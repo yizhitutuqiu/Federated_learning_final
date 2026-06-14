@@ -67,6 +67,17 @@ python scripts/run_suite.py --rounds 30 --attack-iters 800
 python scripts/run_compare_plot.py --device auto --defense laugd --unbiased
 ```
 
+### 4.1 把结果变“直观可看”（重构拼图 + 简单指标表）
+
+对已有的 `outputs/<exp_name>/runs.json`，生成：
+
+- `recon_compare.png`：baseline+attack vs baseline+attack+defense 的重构图拼图
+- `overview.md`：直接可读的一页报告（内嵌 loss 曲线与重构图）
+
+```bash
+python scripts/make_visual_report.py --compare-dir outputs/<exp_name>
+```
+
 ## 5) Sweep：隐私-效用前沿 + 标签泄漏统计（推荐用来体现方法差异）
 
 会自动对 Clipping / DP-light / LAUGD 做参数网格，并在多个 seed×客户端×轮次上重复采样，输出隐私-效用散点图（含前沿）与 label leakage 统计图到 `outputs/<exp_name>/`。

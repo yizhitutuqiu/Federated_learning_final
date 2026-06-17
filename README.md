@@ -2,6 +2,8 @@
 
 本目录实现了一个可复现的联邦学习隐私安全教学项目：在“服务器可见单客户端更新”的威胁模型下，复现梯度反演攻击，并对比 Clipping / DP-light / LAUGD（Leakage-Aware Unbiased Gradient Dropout）及若干消融。
 
+更完整的项目说明（含 3 攻击×6 防御、sweep/suite、指标解释与常见问题）见：[PROJECT.md](file:///data/litengmo/ml-test-1/Federated_learning_final/PROJECT.md)。
+
 ## 目录
 
 - `fl_privacy/`：核心实现（数据划分、联邦训练、攻击、防御、指标）

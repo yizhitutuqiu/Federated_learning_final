@@ -26,11 +26,14 @@ def parse_args():
     p.add_argument("--attack-rounds", type=str, default="0,5,10")
     p.add_argument("--attack-clients", type=str, default="0,1,2")
     p.add_argument("--attack-iters", type=int, default=800)
-    p.add_argument("--attack-method", type=str, default="dlg", choices=["dlg", "ig"])
+    p.add_argument("--attack-method", type=str, default="dlg", choices=["dlg", "ig", "lbfgs"])
+    p.add_argument("--attack-modes", type=str, default="unknown_label", choices=["unknown_label", "unknown_label,true_label"])
     p.add_argument("--attack-l2-reg", type=float, default=0.0)
 
     p.add_argument("--clipping-grid", type=str, default="0.2,0.5,1.0,2.0")
     p.add_argument("--dp-grid", type=str, default="0.02,0.05,0.1,0.2,0.3")
+    p.add_argument("--include-svd", action="store_true")
+    p.add_argument("--svd-grid", type=str, default="0.1,0.2,0.3,0.5")
     p.add_argument("--laugd-grid", type=str, default="0.1,0.2,0.3,0.5,0.7")
     p.add_argument("--laugd-alpha-grid", type=str, default="0.5,1.0,2.0")
     p.add_argument("--laugd-tau-grid", type=str, default="0.9,1.0,1.1")
@@ -169,6 +172,7 @@ def plot_scatter(out_path: Path, rows: list[dict], title: str, x_key: str, y_key
         "baseline": "#1f77b4",
         "clipping": "#ff7f0e",
         "dp_light": "#2ca02c",
+        "svd": "#17becf",
         "laugd": "#d62728",
         "clip_laugd": "#9467bd",
         "laugd_v2": "#8c564b",
@@ -224,12 +228,14 @@ def main():
     seeds = parse_list(args.seeds, int)
     attack_rounds = parse_list(args.attack_rounds, int)
     attack_clients = parse_list(args.attack_clients, int)
+    attack_modes = [m.strip() for m in args.attack_modes.split(",") if m.strip()]
 
     spec_path = out_dir / "attack_spec.json"
     write_attack_spec(spec_path, rounds=attack_rounds, clients=attack_clients)
 
     clipping_grid = parse_list(args.clipping_grid, float)
     dp_grid = parse_list(args.dp_grid, float)
+    svd_grid = parse_list(args.svd_grid, float)
     laugd_grid = parse_list(args.laugd_grid, float)
     laugd_alpha_grid = parse_list(args.laugd_alpha_grid, float)
     laugd_tau_grid = parse_list(args.laugd_tau_grid, float)
@@ -249,6 +255,16 @@ def main():
                 "extra": ["--clip-norm", "1.0", "--noise-multiplier", str(nm)],
             }
         )
+    if args.include_svd:
+        for rr in svd_grid:
+            configs.append(
+                {
+                    "family": "svd",
+                    "name": f"svd_r{rr}",
+                    "defense": "svd",
+                    "extra": ["--svd-rank-ratio", str(rr)],
+                }
+            )
     for alpha in laugd_alpha_grid:
         for tau in laugd_tau_grid:
             for pm in laugd_grid:
@@ -370,7 +386,7 @@ def main():
                     if not obs_path.exists():
                         continue
 
-                    for mode in ["unknown_label", "true_label"]:
+                    for mode in attack_modes:
                         use_true_label = mode == "true_label"
                         out_attack_dir = run_dir / "attack_sweep" / tag / mode
                         out_attack_dir.mkdir(parents=True, exist_ok=True)
@@ -475,8 +491,8 @@ def main():
             )
         (out_dir / f"pareto_{mode}.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-    write_pareto("unknown_label")
-    write_pareto("true_label")
+    for mode in attack_modes:
+        write_pareto(mode)
 
     def summarize_label_acc(mode: str):
         families = sorted({r["family"] for r in all_rows})
@@ -494,7 +510,7 @@ def main():
     rows_true = [r for r in all_rows if r["attack_mode"] == "true_label"]
     groups_all = sorted({r["family"] for r in all_rows})
 
-    if rows_unknown:
+    if "unknown_label" in attack_modes and rows_unknown:
         plot_scatter(
             out_dir / "privacy_utility_unknown.png",
             rows_unknown,
@@ -518,7 +534,7 @@ def main():
             ylabel="label recovery acc",
         )
 
-    if rows_true:
+    if "true_label" in attack_modes and rows_true:
         plot_scatter(
             out_dir / "privacy_utility_true.png",
             rows_true,

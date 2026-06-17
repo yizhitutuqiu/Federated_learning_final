@@ -27,6 +27,10 @@ def parse_args():
     p.add_argument("--attack-methods", type=str, default="dlg,ig,lbfgs")
     p.add_argument("--attack-modes", type=str, default="unknown_label,true_label")
     p.add_argument("--attack-l2-reg", type=float, default=0.0)
+    p.add_argument("--resume", action="store_true")
+    p.add_argument("--include-rgm-2024", action="store_true")
+    p.add_argument("--rgm-p", type=float, default=0.3)
+    p.add_argument("--rgm-mask-mode", type=str, default="fixed_budget", choices=["bernoulli", "fixed_budget", "channel"])
     return p.parse_args()
 
 
@@ -150,6 +154,25 @@ def main():
             ]
         )
 
+    if bool(args.include_rgm_2024):
+        p_drop = float(max(0.0, min(0.95, float(args.rgm_p))))
+        configs.append(
+            {
+                "name": f"rgm_2024_p{p_drop}",
+                "extra": [
+                    "--defense",
+                    "laugd",
+                    "--fixed-p",
+                    str(p_drop),
+                    "--p-max",
+                    str(p_drop),
+                    "--unbiased",
+                    "--mask-mode",
+                    str(args.rgm_mask_mode),
+                ],
+            }
+        )
+
     rows = []
     attack_methods = [x.strip() for x in args.attack_methods.split(",") if x.strip()]
     attack_modes = [x.strip() for x in args.attack_modes.split(",") if x.strip()]
@@ -161,16 +184,26 @@ def main():
 
     for cfg in configs:
         run_name = f"{suite_name}__{cfg['name']}"
-        cmd_train = base_train + ["--run-name", run_name] + cfg["extra"]
-        out = subprocess.check_output(cmd_train, text=True).strip().splitlines()[-1].strip()
-        run_dir = Path(out)
-
+        run_dir = Path(args.runs_dir) / run_name
         obs = run_dir / "attack_obs.pt"
+        metrics_jsonl = run_dir / "metrics.jsonl"
+        if not (bool(args.resume) and run_dir.exists() and obs.exists() and metrics_jsonl.exists()):
+            cmd_train = base_train + ["--run-name", run_name] + cfg["extra"]
+            out = subprocess.check_output(cmd_train, text=True).strip().splitlines()[-1].strip()
+            run_dir = Path(out)
+            obs = run_dir / "attack_obs.pt"
+            metrics_jsonl = run_dir / "metrics.jsonl"
+
         attack_metrics = {}
         for method in attack_methods:
             for mode in attack_modes:
                 out_dir = run_dir / f"attack_{method}" / mode
                 out_dir.mkdir(parents=True, exist_ok=True)
+                metrics_path = out_dir / "attack_metrics.json"
+                if bool(args.resume) and metrics_path.exists():
+                    with open(metrics_path, "r", encoding="utf-8") as f:
+                        attack_metrics[f"{method}__{mode}"] = json.load(f)
+                    continue
                 cmd_attack = [
                     "python",
                     str(Path(__file__).resolve().parent / "run_attack.py"),
@@ -192,10 +225,10 @@ def main():
                 if mode == "true_label":
                     cmd_attack.append("--use-true-label")
                 subprocess.check_call(cmd_attack)
-                with open(out_dir / "attack_metrics.json", "r", encoding="utf-8") as f:
+                with open(metrics_path, "r", encoding="utf-8") as f:
                     attack_metrics[f"{method}__{mode}"] = json.load(f)
 
-        row = {"name": cfg["name"], "run_dir": str(run_dir), "test_acc": read_last_test_acc(run_dir / "metrics.jsonl")}
+        row = {"name": cfg["name"], "run_dir": str(run_dir), "test_acc": read_last_test_acc(metrics_jsonl)}
         for k, m in attack_metrics.items():
             row[f"psnr__{k}"] = float(m.get("psnr", float("nan")))
             row[f"mse__{k}"] = float(m.get("mse", float("nan")))

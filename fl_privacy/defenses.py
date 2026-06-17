@@ -165,6 +165,7 @@ def laugd(
             d_all = t.numel()
             k_keep = int(round((1.0 - p) * d_all))
             k_keep = max(0, min(d_all, k_keep))
+            keep_prob = float(k_keep / d_all) if d_all > 0 else 0.0
             idx = torch.randperm(d_all, device=t.device)[:k_keep]
             mask = torch.zeros(d_all, device=t.device, dtype=t.dtype)
             mask[idx] = 1.0
@@ -174,9 +175,16 @@ def laugd(
 
         if unbiased:
             if isinstance(keep_prob, float):
-                scaled = (mask * t) / keep_prob
+                if keep_prob <= 0.0:
+                    scaled = torch.zeros_like(t)
+                else:
+                    scaled = (mask * t) / keep_prob
             else:
-                scaled = (mask * t) / keep_prob.to(dtype=t.dtype)
+                kp = keep_prob.to(dtype=t.dtype)
+                if torch.all(kp <= 0.0):
+                    scaled = torch.zeros_like(t)
+                else:
+                    scaled = (mask * t) / kp
         else:
             scaled = mask * t
 
